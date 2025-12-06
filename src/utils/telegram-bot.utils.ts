@@ -8,7 +8,25 @@ import {
   DaDataCompanyData,
   IndividualData,
   ContractData,
+  CompanyStatus,
 } from '../types/telegram-bot.types';
+
+// Scoring constants
+const MIN_CAPITAL_THRESHOLD = 10000; // Minimum authorized capital in rubles
+const QC_GEO_MASS_REGISTRATION_4 = '4'; // DaData qc_geo code for mass registration
+const QC_GEO_MASS_REGISTRATION_5 = '5'; // DaData qc_geo code for mass registration
+const NEW_COMPANY_THRESHOLD_MONTHS = 6; // Less than 6 months old
+const YOUNG_COMPANY_THRESHOLD_MONTHS = 12; // Less than 12 months old
+
+// Scoring penalties
+const PENALTY_LIQUIDATED = 70;
+const PENALTY_LIQUIDATING = 50;
+const PENALTY_REORGANIZING = 30;
+const PENALTY_UNKNOWN_STATUS = 20;
+const PENALTY_NEW_COMPANY = 25;
+const PENALTY_YOUNG_COMPANY = 15;
+const PENALTY_LOW_CAPITAL = 15;
+const PENALTY_MASS_ADDRESS = 20;
 
 /**
  * Validates INN (Individual Taxpayer Number) format
@@ -108,25 +126,25 @@ export function calculateCompanyScoring(companyData: DaDataCompanyData): Scoring
   const details: string[] = [];
 
   // Check company status
-  if (companyData.state?.status === 'LIQUIDATING') {
-    score -= 50;
+  if (companyData.state?.status === CompanyStatus.LIQUIDATING) {
+    score -= PENALTY_LIQUIDATING;
     riskLevel = RiskLevel.CRITICAL;
     recommendations.push('⛔ Компания находится в процессе ликвидации');
     details.push('Статус: Ликвидация');
-  } else if (companyData.state?.status === 'LIQUIDATED') {
-    score -= 70;
+  } else if (companyData.state?.status === CompanyStatus.LIQUIDATED) {
+    score -= PENALTY_LIQUIDATED;
     riskLevel = RiskLevel.CRITICAL;
     recommendations.push('⛔ Компания ликвидирована');
     details.push('Статус: Ликвидирована');
-  } else if (companyData.state?.status === 'REORGANIZING') {
-    score -= 30;
+  } else if (companyData.state?.status === CompanyStatus.REORGANIZING) {
+    score -= PENALTY_REORGANIZING;
     riskLevel = RiskLevel.HIGH;
     recommendations.push('⚠️ Компания в процессе реорганизации');
     details.push('Статус: Реорганизация');
-  } else if (companyData.state?.status === 'ACTIVE') {
+  } else if (companyData.state?.status === CompanyStatus.ACTIVE) {
     details.push('Статус: ✅ Активна');
   } else {
-    score -= 20;
+    score -= PENALTY_UNKNOWN_STATUS;
     riskLevel = RiskLevel.MEDIUM;
     details.push('Статус: Неизвестен');
   }
@@ -137,12 +155,12 @@ export function calculateCompanyScoring(companyData: DaDataCompanyData): Scoring
     const monthsSinceReg =
       (Date.now() - regDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
 
-    if (monthsSinceReg < 6) {
-      score -= 25;
+    if (monthsSinceReg < NEW_COMPANY_THRESHOLD_MONTHS) {
+      score -= PENALTY_NEW_COMPANY;
       if (riskLevel === RiskLevel.LOW) riskLevel = RiskLevel.MEDIUM;
       recommendations.push('⚠️ Компания зарегистрирована менее 6 месяцев назад');
-    } else if (monthsSinceReg < 12) {
-      score -= 15;
+    } else if (monthsSinceReg < YOUNG_COMPANY_THRESHOLD_MONTHS) {
+      score -= PENALTY_YOUNG_COMPANY;
       if (riskLevel === RiskLevel.LOW) riskLevel = RiskLevel.MEDIUM;
       recommendations.push('⚠️ Компания зарегистрирована менее года назад');
     }
@@ -153,8 +171,8 @@ export function calculateCompanyScoring(companyData: DaDataCompanyData): Scoring
   // Check authorized capital
   if (companyData.capital?.value) {
     const capital = parseFloat(companyData.capital.value);
-    if (capital < 10000) {
-      score -= 15;
+    if (capital < MIN_CAPITAL_THRESHOLD) {
+      score -= PENALTY_LOW_CAPITAL;
       if (riskLevel === RiskLevel.LOW) riskLevel = RiskLevel.MEDIUM;
       recommendations.push('⚠️ Низкий уставный капитал');
     }
@@ -177,8 +195,8 @@ export function calculateCompanyScoring(companyData: DaDataCompanyData): Scoring
 
     // Mass registration address check
     const qcGeo = companyData.address?.data?.qc_geo;
-    if (qcGeo === '4' || qcGeo === '5') {
-      score -= 20;
+    if (qcGeo === QC_GEO_MASS_REGISTRATION_4 || qcGeo === QC_GEO_MASS_REGISTRATION_5) {
+      score -= PENALTY_MASS_ADDRESS;
       if (riskLevel === RiskLevel.LOW) riskLevel = RiskLevel.MEDIUM;
       recommendations.push('⚠️ Адрес массовой регистрации');
     }

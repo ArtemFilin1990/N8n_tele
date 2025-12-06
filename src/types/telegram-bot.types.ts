@@ -62,6 +62,16 @@ export interface SessionData {
 }
 
 /**
+ * Company status types from DaData API
+ */
+export enum CompanyStatus {
+  ACTIVE = 'ACTIVE',
+  LIQUIDATING = 'LIQUIDATING',
+  LIQUIDATED = 'LIQUIDATED',
+  REORGANIZING = 'REORGANIZING',
+}
+
+/**
  * DaData company response structure
  */
 export interface DaDataCompanyData {
@@ -72,7 +82,7 @@ export interface DaDataCompanyData {
   inn?: string;
   ogrn?: string;
   state?: {
-    status?: 'ACTIVE' | 'LIQUIDATING' | 'LIQUIDATED' | 'REORGANIZING';
+    status?: CompanyStatus;
     registration_date?: string;
   };
   capital?: {

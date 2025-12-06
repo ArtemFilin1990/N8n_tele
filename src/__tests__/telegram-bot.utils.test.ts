@@ -16,7 +16,7 @@ import {
   getCurrentTimestamp,
 } from '../utils/telegram-bot.utils';
 
-import { RiskLevel, DaDataCompanyData } from '../types/telegram-bot.types';
+import { RiskLevel, DaDataCompanyData, CompanyStatus } from '../types/telegram-bot.types';
 
 describe('Telegram Bot Utilities', () => {
   describe('validateINN', () => {
@@ -157,7 +157,7 @@ describe('Telegram Bot Utilities', () => {
         inn: '1234567890',
         ogrn: '1234567890123',
         state: {
-          status: 'ACTIVE',
+          status: CompanyStatus.ACTIVE,
           registration_date: '2020-01-01',
         },
         capital: { value: '100000' },
@@ -183,7 +183,7 @@ describe('Telegram Bot Utilities', () => {
         name: { short_with_opf: 'ООО "Ликвидация"' },
         inn: '1234567890',
         state: {
-          status: 'LIQUIDATED',
+          status: CompanyStatus.LIQUIDATED,
         },
       };
 
@@ -201,7 +201,7 @@ describe('Telegram Bot Utilities', () => {
       const companyData: DaDataCompanyData = {
         name: { short_with_opf: 'ООО "Новая"' },
         state: {
-          status: 'ACTIVE',
+          status: CompanyStatus.ACTIVE,
           registration_date: recentDate.toISOString().split('T')[0],
         },
       };
@@ -215,7 +215,7 @@ describe('Telegram Bot Utilities', () => {
     it('should penalize low authorized capital', () => {
       const companyData: DaDataCompanyData = {
         name: { short_with_opf: 'ООО "Малый капитал"' },
-        state: { status: 'ACTIVE' },
+        state: { status: CompanyStatus.ACTIVE },
         capital: { value: '5000' },
       };
 
@@ -227,7 +227,7 @@ describe('Telegram Bot Utilities', () => {
     it('should penalize mass registration address', () => {
       const companyData: DaDataCompanyData = {
         name: { short_with_opf: 'ООО "Массовый адрес"' },
-        state: { status: 'ACTIVE' },
+        state: { status: CompanyStatus.ACTIVE },
         address: {
           value: 'г. Москва, ул. Массовая, д. 1',
           data: { qc_geo: '4' },
