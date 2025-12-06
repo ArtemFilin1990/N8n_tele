@@ -100,4 +100,28 @@ describe('scoreCompany', () => {
     );
     expect(result.negatives).toEqual(expect.arrayContaining(['Задолженность по налогам']));
   });
+
+  it('applies systemic capital bonus and mass-address penalty explicitly', () => {
+    const profile: CompanyProfile = {
+      registrationDate: new Date('2000-02-02').toISOString(),
+      stateStatus: 'ACTIVE',
+      capital: 12_000_000_000,
+      isMassAddress: true,
+      employees: 5,
+      finance: { profit: 2_000_000, revenue: 120_000_000 },
+      branchCount: 4,
+    };
+
+    const result = scoreCompany(profile);
+
+    expect(result.finalScore).toBeGreaterThan(50);
+    expect(result.positives).toEqual(
+      expect.arrayContaining([
+        'Системно значимый капитал (>10 млрд ₽)',
+        'Крупная выручка (≥100 млн ₽)',
+        'Развитая сеть филиалов',
+      ]),
+    );
+    expect(result.negatives).toEqual(expect.arrayContaining(['Массовый юридический адрес']));
+  });
 });

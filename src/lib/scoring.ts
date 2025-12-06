@@ -63,6 +63,50 @@ export interface ScoringResult {
 const BASE_SCORE = 50;
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 const ENFORCEMENT_SERIOUS_AMOUNT = 1_000_000;
+const SYSTEMIC_CAPITAL_THRESHOLD = 10_000_000_000;
+
+const WEIGHTS = {
+  statusCritical: -25,
+  statusNonActive: -10,
+  unreliableInfo: -20,
+  ageUnderYear: -15,
+  ageOneToThree: -5,
+  ageTenToTwenty: 5,
+  ageOverTwenty: 10,
+  massAddress: -10,
+  directorChange: -5,
+  addressChange: -5,
+  minCapital: -5,
+  largeCapital: 5,
+  employeesMinimal: -10,
+  employeesLarge: 5,
+  profitNegative: -5,
+  profitPositive: 5,
+  revenueLow: -5,
+  revenueStable: 3,
+  revenueLarge: 5,
+  netAssetsNegative: -10,
+  taxArrears: -10,
+  taxPenalties: -5,
+  bankBlocked: -20,
+  enforcement: -5,
+  enforcementSerious: -5,
+  rnp: -20,
+  arbitrationMany: -10,
+  arbitrationNone: 5,
+  arbitrationLostLarge: -10,
+  disqualifiedDirector: -25,
+  disqualifiedFounder: -25,
+  massManager: -15,
+  massFounder: -15,
+  bankruptcyHistory: -10,
+  branchesDeveloped: 5,
+  holding: 5,
+  systemicallyImportant: 5,
+  publicCompany: 5,
+  noNegatives: 5,
+  systemicCapital: 5,
+};
 
 const RISK_BANDS: Array<{
   min: number;
@@ -125,9 +169,12 @@ const RISK_BANDS: Array<{
 const clampScore = (score: number): number => {
   if (score < 0) return 0;
   if (score > 100) return 100;
-  return Math.round(score);
+  return score;
 };
 
+/**
+ * Returns company age in years or null when a date is missing/invalid.
+ */
 const calculateYearsInOperation = (registrationDate?: string): number | null => {
   if (!registrationDate) return null;
   const registeredAt = new Date(registrationDate).getTime();
@@ -136,6 +183,9 @@ const calculateYearsInOperation = (registrationDate?: string): number | null => 
   return diff < 0 ? null : diff / ONE_YEAR_MS;
 };
 
+/**
+ * Checks if a date is within the last calendar year.
+ */
 const wasChangedWithinYear = (changeDate?: string): boolean => {
   if (!changeDate) return false;
   const changedAt = new Date(changeDate).getTime();
@@ -163,69 +213,74 @@ export const scoreCompany = (profile: CompanyProfile): ScoringResult => {
   // Юридический статус
   const status = profile.stateStatus?.toUpperCase();
   if (status === 'LIQUIDATED' || status === 'LIQUIDATING' || status === 'BANKRUPT') {
-    score -= 25;
+    score += WEIGHTS.statusCritical;
     negatives.push('Компания в ликвидации/банкротстве');
   } else if (status && status !== 'ACTIVE') {
-    score -= 10;
+    score += WEIGHTS.statusNonActive;
     negatives.push(`Статус: ${status}`);
   }
 
   if (profile.hasUnreliableInfo) {
-    score -= 20;
+    score += WEIGHTS.unreliableInfo;
     negatives.push('Недостоверность сведений (ФНС)');
   }
 
   // Возраст компании
   if (years !== null) {
     if (years < 1) {
-      score -= 15;
+      score += WEIGHTS.ageUnderYear;
       negatives.push('Возраст компании менее 1 года');
     } else if (years < 3) {
-      score -= 5;
+      score += WEIGHTS.ageOneToThree;
       negatives.push('Возраст компании 1-3 года');
     } else if (years >= 10 && years < 20) {
-      score += 5;
+      score += WEIGHTS.ageTenToTwenty;
       positives.push('Возраст компании 10-20 лет');
     } else if (years >= 20) {
-      score += 10;
+      score += WEIGHTS.ageOverTwenty;
       positives.push('Возраст компании более 20 лет');
     }
   }
 
   // Юридический адрес и изменения
   if (profile.isMassAddress) {
-    score -= 10;
+    score += WEIGHTS.massAddress;
     negatives.push('Массовый юридический адрес');
   }
 
   if (years && years > 1 && wasChangedWithinYear(profile.managementChangeDate)) {
-    score -= 5;
+    score += WEIGHTS.directorChange;
     negatives.push('Смена директора в последний год');
   }
 
   if (years && years > 1 && wasChangedWithinYear(profile.addressChangeDate)) {
-    score -= 5;
+    score += WEIGHTS.addressChange;
     negatives.push('Смена юридического адреса в последний год');
   }
 
   // Капитал
   if (typeof profile.capital === 'number') {
     if (profile.capital <= 10_000) {
-      score -= 5;
+      score += WEIGHTS.minCapital;
       negatives.push('Минимальный уставный капитал');
     } else if (profile.capital >= 1_000_000) {
-      score += 5;
+      score += WEIGHTS.largeCapital;
       positives.push('Крупный уставный капитал');
+    }
+
+    if (profile.capital >= SYSTEMIC_CAPITAL_THRESHOLD) {
+      score += WEIGHTS.systemicCapital;
+      positives.push('Системно значимый капитал (>10 млрд ₽)');
     }
   }
 
   // Численность сотрудников
   if (typeof profile.employees === 'number') {
     if (profile.employees <= 1) {
-      score -= 10;
+      score += WEIGHTS.employeesMinimal;
       negatives.push('0-1 сотрудник');
     } else if (profile.employees > 50) {
-      score += 5;
+      score += WEIGHTS.employeesLarge;
       positives.push('Штат более 50 сотрудников');
     }
   }
@@ -235,46 +290,46 @@ export const scoreCompany = (profile: CompanyProfile): ScoringResult => {
   if (finance) {
     if (typeof finance.profit === 'number') {
       if (finance.profit < 0) {
-        score -= 5;
+        score += WEIGHTS.profitNegative;
         negatives.push('Отрицательный финансовый результат');
       } else if (finance.profit > 0) {
-        score += 5;
+        score += WEIGHTS.profitPositive;
         positives.push('Положительный финансовый результат');
       }
     }
 
     if (typeof finance.revenue === 'number') {
       if (finance.revenue < 1_000_000) {
-        score -= 5;
+        score += WEIGHTS.revenueLow;
         negatives.push('Низкая выручка (<1 млн ₽)');
       } else if (finance.revenue >= 10_000_000 && finance.revenue < 100_000_000) {
-        score += 3;
+        score += WEIGHTS.revenueStable;
         positives.push('Стабильная выручка 10-100 млн ₽');
       } else if (finance.revenue >= 100_000_000) {
-        score += 5;
+        score += WEIGHTS.revenueLarge;
         positives.push('Крупная выручка (≥100 млн ₽)');
       }
     }
 
     if (typeof finance.netAssets === 'number' && finance.netAssets < 0) {
-      score -= 10;
+      score += WEIGHTS.netAssetsNegative;
       negatives.push('Отрицательные чистые активы');
     }
   }
 
   // Долги и задолженность
   if (profile.taxArrears) {
-    score -= 10;
+    score += WEIGHTS.taxArrears;
     negatives.push('Задолженность по налогам');
   }
 
   if (profile.taxPenalties) {
-    score -= 5;
+    score += WEIGHTS.taxPenalties;
     negatives.push('Штрафы и пени');
   }
 
   if (profile.bankAccountBlocked) {
-    score -= 20;
+    score += WEIGHTS.bankBlocked;
     negatives.push('Блокировка счетов (ФНС)');
   }
 
@@ -283,17 +338,17 @@ export const scoreCompany = (profile: CompanyProfile): ScoringResult => {
     const count = enforcement.count ?? 0;
     const totalAmount = enforcement.totalAmount ?? 0;
     if (count > 0) {
-      score -= 5;
+      score += WEIGHTS.enforcement;
       negatives.push('Есть исполнительные производства');
       if (count > 5 || totalAmount > ENFORCEMENT_SERIOUS_AMOUNT) {
-        score -= 5;
+        score += WEIGHTS.enforcementSerious;
         negatives.push('Множественные или крупные исполнительные производства');
       }
     }
   }
 
   if (profile.inRnp) {
-    score -= 20;
+    score += WEIGHTS.rnp;
     negatives.push('Включена в РНП');
   }
 
@@ -302,69 +357,69 @@ export const scoreCompany = (profile: CompanyProfile): ScoringResult => {
   if (arbitration) {
     const casesAsDefendant = arbitration.casesAsDefendant ?? 0;
     if (casesAsDefendant > 5) {
-      score -= 10;
+      score += WEIGHTS.arbitrationMany;
       negatives.push('Множество арбитражных дел (>5)');
     } else if (casesAsDefendant === 0 && years && years >= 3) {
-      score += 5;
+      score += WEIGHTS.arbitrationNone;
       positives.push('Нет арбитражных дел (компания старше 3 лет)');
     }
 
     if (arbitration.lostCaseAmount && arbitration.lostCaseAmount > ENFORCEMENT_SERIOUS_AMOUNT) {
-      score -= 10;
+      score += WEIGHTS.arbitrationLostLarge;
       negatives.push('Крупные проигранные арбитражные дела');
     }
   }
 
   // Менеджмент и управление
   if (profile.disqualifiedDirector) {
-    score -= 25;
+    score += WEIGHTS.disqualifiedDirector;
     negatives.push('Дисквалифицированный директор');
   }
 
   if (profile.disqualifiedFounder) {
-    score -= 25;
+    score += WEIGHTS.disqualifiedFounder;
     negatives.push('Дисквалифицированный учредитель');
   }
 
   if (profile.massManagerCount && profile.massManagerCount > 10) {
-    score -= 15;
+    score += WEIGHTS.massManager;
     negatives.push('Массовый руководитель (>10 компаний)');
   }
 
   if (profile.massFounderCount && profile.massFounderCount > 10) {
-    score -= 15;
+    score += WEIGHTS.massFounder;
     negatives.push('Массовый учредитель (>10 компаний)');
   }
 
   if (profile.bankruptcyHistoryCount && profile.bankruptcyHistoryCount >= 3) {
-    score -= 10;
+    score += WEIGHTS.bankruptcyHistory;
     negatives.push('Связанные лица участвовали в множественных ликвидациях');
   }
 
   // Структура и репутация
   if (profile.branchCount && profile.branchCount > 3) {
-    score += 5;
+    score += WEIGHTS.branchesDeveloped;
     positives.push('Развитая сеть филиалов');
   }
 
   if (profile.isPartOfHolding) {
-    score += 5;
+    score += WEIGHTS.holding;
     positives.push('Принадлежность крупному холдингу');
   }
 
   if (profile.isSystemicallyImportant) {
-    score += 5;
+    score += WEIGHTS.systemicallyImportant;
     positives.push('Системно значимая компания');
   }
 
   if (profile.isPublicCompany) {
-    score += 5;
+    score += WEIGHTS.publicCompany;
     positives.push('Публичное акционерное общество');
   }
 
   // Отсутствие негативных маркеров
   if (!negatives.length && status === 'ACTIVE') {
-    score += 5;
+    score += WEIGHTS.noNegatives;
     positives.push('Не выявлено негативных маркеров');
   }
 
