@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+package-lock.json
+
+# build artifacts
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# testing
+coverage/
+
+# env files
+.env
+.env.local
+.env.production
+.env.test
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+.vscode/
+.idea/
+
+# vercel
+.vercel

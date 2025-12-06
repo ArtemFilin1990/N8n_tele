@@ -1,0 +1,352 @@
+{
+  "name": "EvaRoomBot - Telegram Verification Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message", "callback_query"]
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "eva-room-bot",
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// FSM - Finite State Machine for session management\nconst userId = $json.message?.from?.id || $json.callback_query?.from?.id;\nconst messageText = $json.message?.text || '';\nconst callbackData = $json.callback_query?.data || '';\n\n// Initialize or get session state\nconst sessionKey = `session_${userId}`;\nlet sessionState = await $getWorkflowStaticData('global')[sessionKey] || {\n  state: 'IDLE',\n  data: {},\n  timestamp: Date.now()\n};\n\n// Determine input type and content\nlet inputType = 'unknown';\nlet inputContent = '';\n\nif (messageText.startsWith('/')) {\n  inputType = 'command';\n  inputContent = messageText;\n} else if (callbackData) {\n  inputType = 'button';\n  inputContent = callbackData;\n} else if (messageText) {\n  inputType = 'text';\n  inputContent = messageText;\n}\n\n// Output enhanced data\nreturn {\n  json: {\n    userId,\n    inputType,\n    inputContent,\n    sessionState,\n    originalMessage: $json.message,\n    originalCallback: $json.callback_query,\n    chatId: $json.message?.chat?.id || $json.callback_query?.message?.chat?.id\n  }\n};"
+      },
+      "id": "session-state",
+      "name": "Session State Manager",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.inputType}}",
+              "operation": "equals",
+              "value2": "command"
+            }
+          ]
+        }
+      },
+      "id": "router-command",
+      "name": "Router - Command",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.inputType}}",
+              "operation": "equals",
+              "value2": "button"
+            }
+          ]
+        }
+      },
+      "id": "router-button",
+      "name": "Router - Button",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 350]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.inputType}}",
+              "operation": "equals",
+              "value2": "text"
+            }
+          ]
+        }
+      },
+      "id": "router-text",
+      "name": "Router - Text",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse command and route accordingly\nconst command = $json.inputContent;\nconst sessionState = $json.sessionState;\n\nif (command === '/start') {\n  sessionState.state = 'IDLE';\n  sessionState.data = {};\n  return {\n    json: {\n      ...$json,\n      command: 'start',\n      sessionState,\n      responseText: '👋 Добро пожаловать в EvaRoomBot!\\n\\nВыберите тип проверки:\\n1️⃣ Проверка контрагента (ИНН/ОГРН)\\n2️⃣ Проверка физлица (ФИО, дата рождения)\\n3️⃣ Валидация договора',\n      keyboard: [\n        [{ text: '🏢 Проверка контрагента', callback_data: 'check_company' }],\n        [{ text: '👤 Проверка физлица', callback_data: 'check_individual' }],\n        [{ text: '📄 Валидация договора', callback_data: 'validate_contract' }],\n        [{ text: 'ℹ️ Помощь', callback_data: 'help' }]\n      ]\n    }\n  };\n} else if (command === '/help') {\n  return {\n    json: {\n      ...$json,\n      command: 'help',\n      responseText: '📖 Помощь по использованию бота:\\n\\n/start - Начать работу\\n/check - Проверить контрагента\\n/status - Проверить статус\\n/help - Показать эту справку'\n    }\n  };\n} else if (command === '/check') {\n  sessionState.state = 'AWAITING_INN';\n  return {\n    json: {\n      ...$json,\n      command: 'check',\n      sessionState,\n      responseText: '🔍 Введите ИНН или ОГРН контрагента для проверки:'\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...$json,\n    command: 'unknown',\n    responseText: '❓ Неизвестная команда. Используйте /help для справки.'\n  }\n};"
+      },
+      "id": "command-handler",
+      "name": "Command Handler",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 150]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Handle button callbacks\nconst callbackData = $json.inputContent;\nconst sessionState = $json.sessionState;\n\nif (callbackData === 'check_company') {\n  sessionState.state = 'AWAITING_INN';\n  sessionState.data.checkType = 'company';\n  return {\n    json: {\n      ...$json,\n      action: 'check_company',\n      sessionState,\n      responseText: '🏢 Проверка контрагента\\n\\nВведите ИНН (10 или 12 цифр) или ОГРН (13 или 15 цифр):'\n    }\n  };\n} else if (callbackData === 'check_individual') {\n  sessionState.state = 'AWAITING_INDIVIDUAL_DATA';\n  sessionState.data.checkType = 'individual';\n  return {\n    json: {\n      ...$json,\n      action: 'check_individual',\n      sessionState,\n      responseText: '👤 Проверка физического лица\\n\\nВведите данные в формате:\\nФамилия Имя Отчество, ДД.ММ.ГГГГ, ИНН\\n\\nПример: Иванов Иван Иванович, 01.01.1990, 123456789012'\n    }\n  };\n} else if (callbackData === 'validate_contract') {\n  sessionState.state = 'AWAITING_CONTRACT_DATA';\n  sessionState.data.checkType = 'contract';\n  return {\n    json: {\n      ...$json,\n      action: 'validate_contract',\n      sessionState,\n      responseText: '📄 Валидация договора\\n\\nВведите реквизиты договора:\\nНомер договора, Дата, Сумма\\n\\nПример: Д-12345, 01.12.2024, 100000'\n    }\n  };\n} else if (callbackData === 'help') {\n  return {\n    json: {\n      ...$json,\n      action: 'help',\n      responseText: '📖 Помощь по использованию бота:\\n\\nБот выполняет проверку контрагентов, физических лиц и валидацию договоров.\\n\\nИспользуйте кнопки меню для выбора типа проверки.'\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...$json,\n    action: 'unknown',\n    responseText: '❓ Неизвестное действие.'\n  }\n};"
+      },
+      "id": "button-handler",
+      "name": "Button Handler",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Handle text input based on current state\nconst text = $json.inputContent;\nconst sessionState = $json.sessionState;\nconst currentState = sessionState.state;\n\nif (currentState === 'AWAITING_INN') {\n  // Validate INN/OGRN format\n  const innOgrnPattern = /^\\d{10}$|^\\d{12}$|^\\d{13}$|^\\d{15}$/;\n  if (!innOgrnPattern.test(text.trim())) {\n    return {\n      json: {\n        ...$json,\n        error: true,\n        responseText: '❌ Неверный формат ИНН/ОГРН.\\n\\nИНН: 10 или 12 цифр\\nОГРН: 13 или 15 цифр\\n\\nПопробуйте снова:'\n      }\n    };\n  }\n  \n  sessionState.data.inn_ogrn = text.trim();\n  sessionState.state = 'PROCESSING';\n  \n  return {\n    json: {\n      ...$json,\n      sessionState,\n      inn_ogrn: text.trim(),\n      needsDaDataLookup: true,\n      responseText: '🔄 Выполняется проверка...'\n    }\n  };\n} else if (currentState === 'AWAITING_INDIVIDUAL_DATA') {\n  // Parse individual data\n  const parts = text.split(',').map(p => p.trim());\n  if (parts.length !== 3) {\n    return {\n      json: {\n        ...$json,\n        error: true,\n        responseText: '❌ Неверный формат данных.\\n\\nИспользуйте формат:\\nФамилия Имя Отчество, ДД.ММ.ГГГГ, ИНН\\n\\nПопробуйте снова:'\n      }\n    };\n  }\n  \n  const [fullName, birthDate, inn] = parts;\n  sessionState.data.fullName = fullName;\n  sessionState.data.birthDate = birthDate;\n  sessionState.data.inn = inn;\n  sessionState.state = 'PROCESSING';\n  \n  return {\n    json: {\n      ...$json,\n      sessionState,\n      fullName,\n      birthDate,\n      inn,\n      needsDaDataLookup: true,\n      responseText: '🔄 Выполняется проверка физического лица...'\n    }\n  };\n} else if (currentState === 'AWAITING_CONTRACT_DATA') {\n  // Parse contract data\n  const parts = text.split(',').map(p => p.trim());\n  if (parts.length !== 3) {\n    return {\n      json: {\n        ...$json,\n        error: true,\n        responseText: '❌ Неверный формат данных договора.\\n\\nИспользуйте формат:\\nНомер договора, Дата, Сумма\\n\\nПопробуйте снова:'\n      }\n    };\n  }\n  \n  const [contractNumber, contractDate, amount] = parts;\n  sessionState.data.contractNumber = contractNumber;\n  sessionState.data.contractDate = contractDate;\n  sessionState.data.amount = amount;\n  sessionState.state = 'PROCESSING';\n  \n  return {\n    json: {\n      ...$json,\n      sessionState,\n      contractNumber,\n      contractDate,\n      amount,\n      needsContractValidation: true,\n      responseText: '🔄 Выполняется валидация договора...'\n    }\n  };\n}\n\nreturn {\n  json: {\n    ...$json,\n    responseText: '❓ Я не понимаю ваш запрос. Используйте /start для начала работы.'\n  }\n};"
+      },
+      "id": "text-handler",
+      "name": "Text Input Handler",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 550]
+    },
+    {
+      "parameters": {
+        "url": "https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{$json.inn_ogrn}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "dadata-find-company",
+      "name": "DaData Find Company",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2",
+          "name": "DaData API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate scoring based on DaData response\nconst companyData = $json.suggestions?.[0]?.data || {};\n\nlet score = 100;\nlet riskLevel = 'LOW';\nlet recommendations = [];\nlet details = [];\n\n// Check company status\nif (companyData.state?.status === 'LIQUIDATING') {\n  score -= 50;\n  riskLevel = 'CRITICAL';\n  recommendations.push('⛔ Компания находится в процессе ликвидации');\n  details.push('Статус: Ликвидация');\n} else if (companyData.state?.status === 'LIQUIDATED') {\n  score -= 70;\n  riskLevel = 'CRITICAL';\n  recommendations.push('⛔ Компания ликвидирована');\n  details.push('Статус: Ликвидирована');\n} else if (companyData.state?.status === 'REORGANIZING') {\n  score -= 30;\n  riskLevel = 'HIGH';\n  recommendations.push('⚠️ Компания в процессе реорганизации');\n  details.push('Статус: Реорганизация');\n} else if (companyData.state?.status === 'ACTIVE') {\n  details.push('Статус: ✅ Активна');\n} else {\n  score -= 20;\n  riskLevel = 'MEDIUM';\n  details.push('Статус: Неизвестен');\n}\n\n// Check registration date (newer companies = higher risk)\nif (companyData.state?.registration_date) {\n  const regDate = new Date(companyData.state.registration_date);\n  const monthsSinceReg = (Date.now() - regDate.getTime()) / (1000 * 60 * 60 * 24 * 30);\n  \n  if (monthsSinceReg < 6) {\n    score -= 25;\n    if (riskLevel === 'LOW') riskLevel = 'MEDIUM';\n    recommendations.push('⚠️ Компания зарегистрирована менее 6 месяцев назад');\n  } else if (monthsSinceReg < 12) {\n    score -= 15;\n    if (riskLevel === 'LOW') riskLevel = 'MEDIUM';\n    recommendations.push('⚠️ Компания зарегистрирована менее года назад');\n  }\n  \n  details.push(`Дата регистрации: ${regDate.toLocaleDateString('ru-RU')}`);\n}\n\n// Check authorized capital\nif (companyData.capital?.value) {\n  const capital = parseFloat(companyData.capital.value);\n  if (capital < 10000) {\n    score -= 15;\n    if (riskLevel === 'LOW') riskLevel = 'MEDIUM';\n    recommendations.push('⚠️ Низкий уставный капитал');\n  }\n  details.push(`Уставный капитал: ${capital.toLocaleString('ru-RU')} руб.`);\n}\n\n// Check OKVED (main activity)\nif (companyData.okved) {\n  details.push(`Основной ОКВЭД: ${companyData.okved}`);\n}\n\n// Check management\nif (companyData.management?.name) {\n  details.push(`Руководитель: ${companyData.management.name}`);\n}\n\n// Check address\nif (companyData.address?.value) {\n  details.push(`Адрес: ${companyData.address.value}`);\n  \n  // Mass registration address check\n  if (companyData.address?.data?.qc_geo === '4' || companyData.address?.data?.qc_geo === '5') {\n    score -= 20;\n    if (riskLevel === 'LOW') riskLevel = 'MEDIUM';\n    recommendations.push('⚠️ Адрес массовой регистрации');\n  }\n}\n\n// Final score adjustment\nscore = Math.max(0, Math.min(100, score));\n\n// Determine risk level based on final score\nif (score >= 80) {\n  riskLevel = 'LOW';\n} else if (score >= 60) {\n  riskLevel = 'MEDIUM';\n} else if (score >= 40) {\n  riskLevel = 'HIGH';\n} else {\n  riskLevel = 'CRITICAL';\n}\n\nif (recommendations.length === 0) {\n  recommendations.push('✅ Проверка пройдена успешно');\n}\n\nconst companyName = companyData.name?.short_with_opf || companyData.name?.full || 'Неизвестная компания';\nconst inn = companyData.inn || $json.inn_ogrn;\nconst ogrn = companyData.ogrn || '';\n\nreturn {\n  json: {\n    ...$json,\n    score,\n    riskLevel,\n    recommendations,\n    details,\n    companyName,\n    inn,\n    ogrn,\n    fullCompanyData: companyData\n  }\n};"
+      },
+      "id": "calculate-scoring",
+      "name": "Calculate Scoring",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format result for Telegram message\nconst score = $json.score || 0;\nconst riskLevel = $json.riskLevel || 'UNKNOWN';\nconst recommendations = $json.recommendations || [];\nconst details = $json.details || [];\nconst companyName = $json.companyName || 'Неизвестная компания';\nconst inn = $json.inn || '';\nconst ogrn = $json.ogrn || '';\n\n// Risk level emoji and text\nconst riskEmoji = {\n  'LOW': '🟢',\n  'MEDIUM': '🟡',\n  'HIGH': '🟠',\n  'CRITICAL': '🔴',\n  'UNKNOWN': '⚪'\n};\n\nconst riskText = {\n  'LOW': 'Низкий',\n  'MEDIUM': 'Средний',\n  'HIGH': 'Высокий',\n  'CRITICAL': 'Критический',\n  'UNKNOWN': 'Неизвестен'\n};\n\n// Score emoji\nconst scoreEmoji = score >= 80 ? '🟢' : score >= 60 ? '🟡' : score >= 40 ? '🟠' : '🔴';\n\n// Build message\nlet message = `📊 **Результат проверки контрагента**\\n\\n`;\nmessage += `🏢 **Компания:** ${companyName}\\n`;\nif (inn) message += `🔢 **ИНН:** ${inn}\\n`;\nif (ogrn) message += `🔢 **ОГРН:** ${ogrn}\\n`;\nmessage += `\\n━━━━━━━━━━━━━━━━━━━━\\n\\n`;\nmessage += `${scoreEmoji} **Скоринговый балл:** ${score}/100\\n`;\nmessage += `${riskEmoji[riskLevel]} **Уровень риска:** ${riskText[riskLevel]}\\n`;\nmessage += `\\n━━━━━━━━━━━━━━━━━━━━\\n\\n`;\n\nif (details.length > 0) {\n  message += `📋 **Детали:**\\n`;\n  details.forEach(detail => {\n    message += `• ${detail}\\n`;\n  });\n  message += `\\n━━━━━━━━━━━━━━━━━━━━\\n\\n`;\n}\n\nif (recommendations.length > 0) {\n  message += `💡 **Рекомендации:**\\n`;\n  recommendations.forEach(rec => {\n    message += `${rec}\\n`;\n  });\n}\n\nmessage += `\\n━━━━━━━━━━━━━━━━━━━━\\n`;\nmessage += `\\n🔄 Для новой проверки используйте /start`;\n\n// Reset session state\nconst sessionState = $json.sessionState || {};\nsessionState.state = 'IDLE';\nsessionState.data = {};\n\nreturn {\n  json: {\n    ...$json,\n    responseText: message,\n    sessionState,\n    keyboard: [\n      [{ text: '🔄 Новая проверка', callback_data: 'check_company' }],\n      [{ text: '🏠 Главное меню', callback_data: 'start' }]\n    ]\n  }\n};"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.responseText}}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": "={{JSON.stringify({ inline_keyboard: $json.keyboard || [] })}}"
+      },
+      "id": "send-telegram-message",
+      "name": "Send Telegram Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1650, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Save session state back to workflow static data\nconst userId = $json.userId;\nconst sessionState = $json.sessionState;\nconst sessionKey = `session_${userId}`;\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData[sessionKey] = sessionState;\n\nreturn { json: $json };"
+      },
+      "id": "save-session",
+      "name": "Save Session State",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Session State Manager",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session State Manager": {
+      "main": [
+        [
+          {
+            "node": "Router - Command",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Router - Button",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Router - Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router - Command": {
+      "main": [
+        [
+          {
+            "node": "Command Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router - Button": {
+      "main": [
+        [
+          {
+            "node": "Button Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router - Text": {
+      "main": [
+        [
+          {
+            "node": "Text Input Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Command Handler": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Button Handler": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Input Handler": {
+      "main": [
+        [
+          {
+            "node": "DaData Find Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DaData Find Company": {
+      "main": [
+        [
+          {
+            "node": "Calculate Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Scoring": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Result": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Save Session State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-12-06T00:00:00.000Z",
+  "versionId": "1"
+}
