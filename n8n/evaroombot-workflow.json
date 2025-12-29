@@ -1,0 +1,590 @@
+{
+  "name": "EvaRoomBot (n8n)",
+  "settings": {
+    "executionTimeout": 900
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "id": "1",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.action}}",
+              "operation": "equal",
+              "value2": "company"
+            }
+          ]
+        }
+      },
+      "id": "21",
+      "name": "Action is Company",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "Введите корректный ИНН (10 или 12 цифр), чтобы выполнить проверку контрагента.",
+        "additionalFields": {}
+      },
+      "id": "22",
+      "name": "Ask Valid INN",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        140,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "dadataApiUrl",
+              "value": "https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party"
+            },
+            {
+              "name": "dadataToken",
+              "value": "<DADATA_TOKEN>"
+            },
+            {
+              "name": "dadataSecret",
+              "value": "<DADATA_SECRET>"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const update = $json;\nconst message = update.message || update.callback_query?.message;\nconst text = update.message?.text || update.callback_query?.data || '';\nconst command = text.startsWith('/') ? text.split(' ')[0] : null;\nconst type = update.callback_query ? 'callback' : command ? 'command' : 'text';\n\nreturn [{\n  json: {\n    ...update,\n    chatId: message?.chat?.id,\n    text,\n    command,\n    callbackData: update.callback_query?.data || null,\n    type,\n  },\n}];\n"
+      },
+      "id": "3",
+      "name": "Router Parse",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -990,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const item = items[0];\nconst chatId = item.json.chatId;\nif (!chatId) {\n  return items;\n}\nconst sessions = getWorkflowStaticData('global');\nif (!sessions.store) sessions.store = {};\nif (!sessions.store[chatId]) {\n  sessions.store[chatId] = { state: 'MENU', updatedAt: Date.now() };\n}\nitem.json.session = sessions.store[chatId];\nreturn items;\n"
+      },
+      "id": "4",
+      "name": "Session State",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -780,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "property": "={{$json.type}}",
+        "switches": [
+          {
+            "value": "command"
+          },
+          {
+            "value": "callback"
+          },
+          {
+            "value": "text"
+          }
+        ]
+      },
+      "id": "5",
+      "name": "Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const sessions = getWorkflowStaticData('global');\nconst chatId = $json.chatId;\nif (chatId) {\n  if (!sessions.store) sessions.store = {};\n  sessions.store[chatId] = { state: 'MENU', updatedAt: Date.now() };\n}\nreturn items;\n"
+      },
+      "id": "6",
+      "name": "Handle Commands",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -350,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "Добро пожаловать в EvaRoomBot! 🚀\nВыберите действие:",
+        "additionalFields": {
+          "replyMarkup": "{\n  \"inline_keyboard\": [\n    [\n      { \"text\": \"Проверка контрагента\", \"callback_data\": \"check_company\" },\n      { \"text\": \"Скоринг контрагента\", \"callback_data\": \"score_company\" }\n    ],\n    [\n      { \"text\": \"Проверка физлица\", \"callback_data\": \"check_person\" },\n      { \"text\": \"Проверка договора\", \"callback_data\": \"check_contract\" }\n    ],\n    [\n      { \"text\": \"О боте\", \"callback_data\": \"about_bot\" }\n    ]\n  ]\n}"
+        }
+      },
+      "id": "7",
+      "name": "Send Welcome Menu",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "property": "={{$json.callbackData}}",
+        "switches": [
+          {
+            "value": "check_company"
+          },
+          {
+            "value": "score_company"
+          },
+          {
+            "value": "check_person"
+          },
+          {
+            "value": "check_contract"
+          },
+          {
+            "value": "about_bot"
+          }
+        ]
+      },
+      "id": "8",
+      "name": "Route Actions",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const sessions = getWorkflowStaticData('global');\nconst chatId = $json.chatId;\nif (chatId) {\n  if (!sessions.store) sessions.store = {};\n  sessions.store[chatId] = { state: 'WAIT_INN', updatedAt: Date.now(), mode: $json.callbackData };\n}\nreturn items;\n"
+      },
+      "id": "9",
+      "name": "Set WAIT_INN",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "Введите ИНН или ОГРН компании для проверки/скоринга",
+        "additionalFields": {}
+      },
+      "id": "10",
+      "name": "Ask INN",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        90,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const sessions = getWorkflowStaticData('global');\nconst chatId = $json.chatId;\nif (chatId) {\n  if (!sessions.store) sessions.store = {};\n  sessions.store[chatId] = { state: 'WAIT_PERSON', updatedAt: Date.now() };\n}\nreturn items;\n"
+      },
+      "id": "11",
+      "name": "Set WAIT_PERSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "Введите ФИО, дату рождения и ИНН (если есть) для проверки физлица",
+        "additionalFields": {}
+      },
+      "id": "12",
+      "name": "Ask Person Data",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        90,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const sessions = getWorkflowStaticData('global');\nconst chatId = $json.chatId;\nif (chatId) {\n  if (!sessions.store) sessions.store = {};\n  sessions.store[chatId] = { state: 'WAIT_CONTRACT', updatedAt: Date.now() };\n}\nreturn items;\n"
+      },
+      "id": "13",
+      "name": "Set WAIT_CONTRACT",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        270
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "Отправьте реквизиты договора (ИНН, КПП, БИК, счёт) в одном сообщении",
+        "additionalFields": {}
+      },
+      "id": "14",
+      "name": "Ask Contract Data",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        90,
+        270
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "EvaRoomBot — бот для проверки контрагентов, физлиц и договоров. Работает на n8n, DaData и GPT-4.1.",
+        "additionalFields": {}
+      },
+      "id": "15",
+      "name": "Send About",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        90,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const item = items[0];\nconst sessions = getWorkflowStaticData('global');\nconst chatId = item.json.chatId;\nconst text = (item.json.text || '').trim();\nif (!chatId || !text) return items;\nconst entry = sessions.store?.[chatId] || { state: 'MENU' };\nconst innLike = /^\d{10,13}$/.test(text);\nitem.json.session = entry;\nitem.json.action = entry.state === 'WAIT_INN' || innLike ? 'company' : 'unknown';\nreturn items;\n"
+      },
+      "id": "16",
+      "name": "Text Router",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -340,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const sessions = getWorkflowStaticData('global');\nconst chatId = $json.chatId;\nif (chatId) {\n  if (!sessions.store) sessions.store = {};\n  sessions.store[chatId] = { state: 'MENU', updatedAt: Date.now() };\n}\nreturn items;\n"
+      },
+      "id": "17",
+      "name": "Reset Session",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$node[\"Workflow Configuration\"].json[\"dadataApiUrl\"]}}",
+        "method": "POST",
+        "authentication": "headerAuth",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "{\n  \"query\": \"={{$json.text}}\"\n}",
+        "headerParametersJson": "{\n  \"Authorization\": \"Token {{$node[\\\"Workflow Configuration\\\"].json[\\\"dadataToken\\\"]}}\",\n  \"X-Secret\": \"{{$node[\\\"Workflow Configuration\\\"].json[\\\"dadataSecret\\\"]}}\",\n  \"Content-Type\": \"application/json\"\n}"
+      },
+      "id": "18",
+      "name": "DaData Find Company",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        140,
+        570
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "dadata-headers",
+          "name": "DaData Headers"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const suggestion = $json.suggestions?.[0]?.data;\nif (!suggestion) {\n  return [{ json: { found: false, message: '❌ Контрагент не найден. Проверьте ИНН/ОГРН.' } }];\n}\nlet score = 50;\nconst negatives = [];\nconst positives = [];\nconst years = suggestion.state?.registration_date ? ((Date.now() - new Date(suggestion.state.registration_date).getTime()) / (365*24*60*60*1000)) : null;\nconst clamp = (n) => Math.max(0, Math.min(100, n));\nconst push = (cond, weight, arr, label) => { if (cond) { score += weight; arr.push(label); } };\nconst status = (suggestion.state?.status || '').toUpperCase();\npush(status === 'LIQUIDATING' || status === 'BANKRUPT', -25, negatives, 'Статус: ликвидация/банкротство');\npush(status && !['ACTIVE','LIQUIDATING','BANKRUPT'].includes(status), -10, negatives, `Статус: ${status || 'неизвестно'}`);\npush(suggestion.state?.invalid === true, -20, negatives, 'Недостоверность сведений (ФНС)');\nif (years !== null) {\n  push(years < 1, -15, negatives, 'Возраст <1 года');\n  push(years >= 1 && years < 3, -5, negatives, 'Возраст 1-3 года');\n  push(years >= 10 && years < 20, 5, positives, 'Возраст 10-20 лет');\n  push(years >= 20, 10, positives, 'Возраст более 20 лет');\n}\npush(suggestion.is_mass_address, -10, negatives, 'Массовый адрес');\nconst capital = suggestion.capital?.value || 0;\npush(capital <= 10_000, -5, negatives, 'Минимальный уставный капитал');\npush(capital >= 1_000_000, 5, positives, 'Крупный уставный капитал');\npush(capital >= 10_000_000_000, 5, positives, 'Системно значимый капитал (>10 млрд ₽)');\nconst employees = suggestion.finance?.employee_count;\npush(typeof employees === 'number' && employees <= 1, -10, negatives, '0-1 сотрудник');\npush(typeof employees === 'number' && employees > 50, 5, positives, 'Штат более 50 сотрудников');\nconst profit = suggestion.finance?.profit;\npush(typeof profit === 'number' && profit < 0, -5, negatives, 'Отрицательный финансовый результат');\npush(typeof profit === 'number' && profit > 0, 5, positives, 'Положительная прибыль');\nconst revenue = suggestion.finance?.revenue;\npush(typeof revenue === 'number' && revenue < 1_000_000, -5, negatives, 'Низкая выручка (<1 млн ₽)');\npush(typeof revenue === 'number' && revenue >= 10_000_000 && revenue < 100_000_000, 3, positives, 'Стабильная выручка 10-100 млн ₽');\npush(typeof revenue === 'number' && revenue >= 100_000_000, 5, positives, 'Крупная выручка (≥100 млн ₽)');\npush(typeof suggestion.finance?.net_asset !== 'undefined' && suggestion.finance.net_asset < 0, -10, negatives, 'Отрицательные чистые активы');\nif (!negatives.length && status === 'ACTIVE') {\n  push(true, 5, positives, 'Не выявлено негативных маркеров');\n}\nconst finalScore = clamp(score);\nconst band = [\n  { min:95, level:'Наивысшая надёжность', recommendation:'Контрагент заслуживает максимального доверия.', paymentTerms:'Отсрочка до 60 дней' },\n  { min:85, level:'Высокая надёжность', recommendation:'Риск минимален, можно работать на льготных условиях.', paymentTerms:'Отсрочка до 45 дней' },\n  { min:75, level:'Невысокий риск', recommendation:'Рекомендуется работа на стандартных условиях.', paymentTerms:'Отсрочка до 30 дней' },\n  { min:65, level:'Умеренный риск', recommendation:'Возможна работа с контролем расчётов.', paymentTerms:'Отсрочка до 14 дней' },\n  { min:50, level:'Средний риск', recommendation:'Допустима короткая отсрочка при тщательном контроле.', paymentTerms:'Отсрочка до 7 дней' },\n  { min:30, level:'Высокий риск', recommendation:'Ограниченные условия работы.', paymentTerms:'Предоплата минимум 40%, остаток до отгрузки' },\n  { min:0, level:'Крайне высокий риск', recommendation:'Работа только по полной предоплате.', paymentTerms:'100% предоплата' }\n].find(b => finalScore >= b.min) || { level:'Крайне высокий риск', recommendation:'Работа только по полной предоплате.', paymentTerms:'100% предоплата' };\nreturn [{ json: {\n  found: true,\n  company: suggestion.name?.full_with_opf || suggestion.name?.short_with_opf,\n  inn: suggestion.inn,\n  ogrn: suggestion.ogrn,\n  score: finalScore,\n  level: band.level,\n  recommendation: band.recommendation,\n  paymentTerms: band.paymentTerms,\n  positives,\n  negatives\n}}];\n"
+      },
+      "id": "19",
+      "name": "Calculate Scoring",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        360,
+        570
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.found ? `📊 Скоринг контрагента\nКомпания: ${$json.company || '—'}\nИНН: ${$json.inn || '—'}\nОГРН: ${$json.ogrn || '—'}\nОценка: ${$json.score} / 100\nУровень: ${$json.level}\n\nРекомендация: ${$json.recommendation}\nУсловия оплаты: ${$json.paymentTerms}\n\n✅ Плюсы:\n${($json.positives||[]).join('\\n') || '—'}\n\n❌ Минусы:\n${($json.negatives||[]).join('\\n') || '—'}` : $json.message }}",
+        "additionalFields": {}
+      },
+      "id": "20",
+      "name": "Send Scoring Result",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        900,
+        570
+      ]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Router Parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router Parse": {
+      "main": [
+        [
+          {
+            "node": "Session State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session State": {
+      "main": [
+        [
+          {
+            "node": "Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router": {
+      "main": [
+        [
+          {
+            "node": "Handle Commands",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route Actions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Text Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Commands": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome Menu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Actions": {
+      "main": [
+        [
+          {
+            "node": "Set WAIT_INN",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set WAIT_INN",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set WAIT_PERSON",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set WAIT_CONTRACT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send About",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set WAIT_INN": {
+      "main": [
+        [
+          {
+            "node": "Ask INN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set WAIT_PERSON": {
+      "main": [
+        [
+          {
+            "node": "Ask Person Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set WAIT_CONTRACT": {
+      "main": [
+        [
+          {
+            "node": "Ask Contract Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Router": {
+      "main": [
+        [
+          {
+            "node": "Action is Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action is Company": {
+      "main": [
+        [
+          {
+            "node": "DaData Find Company",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask Valid INN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DaData Find Company": {
+      "main": [
+        [
+          {
+            "node": "Calculate Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Scoring": {
+      "main": [
+        [
+          {
+            "node": "Send Scoring Result",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reset Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "version": 2
+}
